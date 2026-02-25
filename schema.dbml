@@ -1,0 +1,273 @@
+// =============================================
+// SADARA - Sistema de Administración de
+// Registro de Asignaturas
+// Instituciones Educativas de Nivel Superior
+// =============================================
+// Versión: 2.0
+// =============================================
+
+// =============================================
+// CAPA AUTENTICACIÓN
+// =============================================
+
+Table cuenta_usuario {
+  id uuid [pk]
+  institucion_id uuid [ref: > institucion.id, note: 'null para super_admin de plataforma']
+  correo varchar [not null, unique]
+  contrasena_hash varchar [not null, note: 'hash bcrypt, NUNCA texto plano']
+  rol varchar [not null, note: 'super_admin, admin_institucion, estudiante']
+  esta_activo boolean [default: true]
+  ultimo_login timestamp
+  creado_en timestamp [default: `now()`]
+}
+
+// Refresh tokens para gestión de sesiones
+// Permite múltiples sesiones activas y revocación individual
+Table refresh_token {
+  id uuid [pk]
+  cuenta_usuario_id uuid [not null, ref: > cuenta_usuario.id]
+  token varchar [not null, unique, note: 'token hasheado, NUNCA texto plano']
+  expira_en timestamp [not null]
+  revocado boolean [default: false]
+  creado_en timestamp [default: `now()`]
+
+  indexes {
+    (cuenta_usuario_id) [name: 'idx_refresh_token_usuario']
+  }
+}
+
+// =============================================
+// CAPA INSTITUCIONAL (multi-tenant)
+// =============================================
+
+Table institucion {
+  id uuid [pk]
+  nombre varchar [not null]
+  slug varchar [unique, not null, note: 'identificador URL: duoc, inacap, usach']
+  tipo varchar [not null, note: 'universidad, instituto_tecnico, instituto_profesional']
+  logo_url varchar
+  creado_en timestamp [default: `now()`]
+  actualizado_en timestamp
+}
+
+Table facultad {
+  id uuid [pk]
+  institucion_id uuid [not null, ref: > institucion.id]
+  nombre varchar [not null]
+  area varchar [note: 'ingenieria, salud, negocios, artes, ciencias']
+
+  indexes {
+    (institucion_id, nombre) [unique, note: 'nombre único por institución']
+  }
+}
+
+// =============================================
+// CAPA ACADÉMICA
+// =============================================
+
+// Carrera o programa de estudio
+// Cuelga de facultad (y por transitividad, de institución)
+Table carrera {
+  id uuid [pk]
+  facultad_id uuid [not null, ref: > facultad.id]
+  codigo varchar [not null]
+  nombre varchar [not null]
+  modalidad varchar [not null, note: 'presencial, online, semipresencial']
+  total_semestres int [not null]
+  total_creditos int
+  esta_activa boolean [default: true]
+
+  indexes {
+    (facultad_id, codigo) [unique]
+  }
+}
+
+// Malla curricular versionada
+// Una carrera puede tener múltiples mallas (2020, 2024, etc.)
+Table malla_curricular {
+  id uuid [pk]
+  carrera_id uuid [not null, ref: > carrera.id]
+  anio int [not null, note: 'año de vigencia: 2020, 2024']
+  version varchar [note: 'v1, v2']
+  esta_activa boolean [default: true]
+  creado_en timestamp [default: `now()`]
+
+  indexes {
+    (carrera_id, anio, version) [unique]
+  }
+}
+
+// Asignatura / Ramo (existe independiente, puede ser compartida entre carreras)
+Table asignatura {
+  id uuid [pk]
+  institucion_id uuid [not null, ref: > institucion.id]
+  codigo varchar [not null]
+  nombre varchar [not null]
+  creditos int [not null]
+  horas_teoricas int [default: 0]
+  horas_practicas int [default: 0]
+  tipo_asignatura varchar [default: 'obligatoria', note: 'obligatoria, electiva, libre_eleccion']
+
+  indexes {
+    (institucion_id, codigo) [unique, note: 'código único por institución']
+  }
+}
+
+// Tabla pivote: qué ramos van en qué malla y en qué semestre
+Table malla_asignatura {
+  id uuid [pk]
+  malla_id uuid [not null, ref: > malla_curricular.id]
+  asignatura_id uuid [not null, ref: > asignatura.id]
+  numero_semestre int [not null, note: 'en qué semestre de la malla va']
+  es_obligatoria boolean [default: true]
+
+  indexes {
+    (malla_id, asignatura_id) [unique, note: 'un ramo no se repite en la misma malla']
+  }
+}
+
+// Prerrequisitos entre ramos dentro de una malla
+// group_key permite modelar: (A AND B) OR (C AND D)
+// mismo group_key = AND entre ellos, distinto group_key = OR entre grupos
+Table prerrequisito {
+  id uuid [pk]
+  malla_asignatura_id uuid [not null, ref: > malla_asignatura.id, note: 'el ramo que TIENE el prerrequisito']
+  asignatura_requerida_id uuid [not null, ref: > asignatura.id, note: 'el ramo que se NECESITA aprobar']
+  grupo_clave varchar [not null, note: 'mismo grupo = AND, distinto grupo = OR']
+}
+
+// =============================================
+// CAPA TEMPORAL
+// =============================================
+
+// Periodo académico (semestre, trimestre, verano)
+Table periodo_academico {
+  id uuid [pk]
+  institucion_id uuid [not null, ref: > institucion.id]
+  nombre varchar [not null, note: '2025-1, 2025-2, Verano 2025']
+  anio int [not null]
+  semestre int [not null, note: '1, 2, 3 para verano']
+  fecha_inicio date [not null]
+  fecha_fin date [not null]
+  inicio_inscripcion date [note: 'cuándo abre la toma de ramos']
+  fin_inscripcion date [note: 'cuándo cierra']
+  esta_activo boolean [default: false]
+
+  indexes {
+    (institucion_id, anio, semestre) [unique]
+  }
+}
+
+// Sección: instancia concreta de un ramo en un periodo
+// "Cálculo I - Sección 001 - Semestre 2025-1"
+// NOTA: inscritos_actual se calcula dinámicamente con Prisma _count
+// sobre la relación de inscripciones, evitando inconsistencias
+Table seccion {
+  id uuid [pk]
+  asignatura_id uuid [not null, ref: > asignatura.id]
+  periodo_id uuid [not null, ref: > periodo_academico.id]
+  codigo varchar [not null, note: 'NRC o código de sección: 001, 002']
+  capacidad_maxima int [not null]
+
+  indexes {
+    (asignatura_id, periodo_id, codigo) [unique]
+  }
+}
+
+// Bloques de horario de una sección
+// Una sección puede tener múltiples bloques (Lun 10:00-11:30 + Mie 10:00-11:30)
+// Utilizado por el motor de reglas para validar CHOQUE_HORARIO
+Table bloque_horario {
+  id uuid [pk]
+  seccion_id uuid [not null, ref: > seccion.id]
+  dia_semana int [not null, note: '1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado']
+  hora_inicio time [not null]
+  hora_fin time [not null]
+  sala varchar [note: 'sala o laboratorio asignado']
+}
+
+// =============================================
+// CAPA ESTUDIANTES
+// =============================================
+
+Table estudiante {
+  id uuid [pk]
+  cuenta_usuario_id uuid [not null, unique, ref: > cuenta_usuario.id]
+  institucion_id uuid [not null, ref: > institucion.id]
+  codigo_estudiante varchar [not null, note: 'matrícula o código interno']
+  nombre varchar [not null]
+  apellido varchar [not null]
+  telefono varchar
+  anio_ingreso int
+  esta_activo boolean [default: true]
+
+  indexes {
+    (institucion_id, codigo_estudiante) [unique]
+  }
+}
+
+// Relación estudiante-carrera
+// Un alumno puede estar en más de una carrera
+Table estudiante_carrera {
+  id uuid [pk]
+  estudiante_id uuid [not null, ref: > estudiante.id]
+  carrera_id uuid [not null, ref: > carrera.id]
+  malla_id uuid [not null, ref: > malla_curricular.id, note: 'la malla con la que ingresó']
+  anio_admision int [not null]
+  estado varchar [not null, default: 'activo', note: 'activo, egresado, suspendido, retirado']
+
+  indexes {
+    (estudiante_id, carrera_id) [unique]
+  }
+}
+
+// =============================================
+// CAPA INSCRIPCIÓN (core del negocio)
+// =============================================
+
+// Registro de cada inscripción de un alumno en una sección
+Table inscripcion {
+  id uuid [pk]
+  estudiante_carrera_id uuid [not null, ref: > estudiante_carrera.id]
+  seccion_id uuid [not null, ref: > seccion.id]
+  periodo_id uuid [not null, ref: > periodo_academico.id]
+  estado varchar [not null, default: 'inscrito', note: 'inscrito, en_curso, aprobado, reprobado, retirado']
+  inscrito_en timestamp [default: `now()`]
+  actualizado_en timestamp
+
+  indexes {
+    (estudiante_carrera_id, seccion_id) [unique, note: 'no puede inscribirse dos veces en la misma sección']
+  }
+}
+
+// Prioridad de inscripción por periodo
+// Alumnos con mayor avance curricular inscriben primero
+// Módulo Prioridad: gestiona prioridad basada en requisitos
+// de continuidad académica (ramos necesarios para avanzar en malla)
+Table prioridad_inscripcion {
+  id uuid [pk]
+  estudiante_carrera_id uuid [not null, ref: > estudiante_carrera.id]
+  periodo_id uuid [not null, ref: > periodo_academico.id]
+  puntaje_prioridad int [not null, note: 'mayor = inscribe primero']
+  ventana_inicio timestamp [note: 'cuándo puede empezar a inscribir']
+  ventana_fin timestamp
+
+  indexes {
+    (estudiante_carrera_id, periodo_id) [unique]
+  }
+}
+
+// =============================================
+// CAPA REGLAS (configurable por institución)
+// =============================================
+
+// Reglas de negocio configurables sin modificar código
+// Motor de reglas evalúa en orden de prioridad
+Table regla_institucion {
+  id uuid [pk]
+  institucion_id uuid [not null, ref: > institucion.id]
+  tipo_regla varchar [not null, note: 'MAX_CREDITOS, PREREQUISITO_ESTRICTO, MAX_ASIGNATURAS, CHOQUE_HORARIO']
+  configuracion jsonb [not null, note: 'ej: {"max_creditos": 30, "nota_minima_aprobacion": 4.0}']
+  prioridad int [default: 0, note: 'orden de evaluación']
+  esta_habilitada boolean [default: true]
+}

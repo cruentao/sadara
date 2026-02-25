@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables (never commit secrets)
+.env
+
+# Angular cache
+.angular/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma migrations (committed separately and deliberately)
+# Uncomment if you want to ignore them:
+# prisma/migrations/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/

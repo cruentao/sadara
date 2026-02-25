@@ -1,0 +1,382 @@
+// Prisma schema — generated from schema.dbml v2.0
+// DO NOT modify directly without explicit approval
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// ENUMS
+// =============================================
+
+enum Rol {
+  super_admin
+  admin_institucion
+  estudiante
+}
+
+enum TipoInstitucion {
+  universidad
+  instituto_tecnico
+  instituto_profesional
+}
+
+enum Modalidad {
+  presencial
+  online
+  semipresencial
+}
+
+enum TipoAsignatura {
+  obligatoria
+  electiva
+  libre_eleccion
+}
+
+enum EstadoEstudianteCarrera {
+  activo
+  egresado
+  suspendido
+  retirado
+}
+
+enum EstadoInscripcion {
+  inscrito
+  en_curso
+  aprobado
+  reprobado
+  retirado
+}
+
+enum TipoRegla {
+  MAX_CREDITOS
+  PREREQUISITO_ESTRICTO
+  MAX_ASIGNATURAS
+  CHOQUE_HORARIO
+}
+
+// =============================================
+// AUTHENTICATION LAYER
+// =============================================
+
+model CuentaUsuario {
+  id              String    @id @default(uuid()) @db.Uuid
+  institucion_id  String?   @db.Uuid // null for platform-level super_admin
+  correo          String    @unique
+  contrasena_hash String    // bcrypt hash — NEVER plain text
+  rol             Rol
+  esta_activo     Boolean   @default(true)
+  ultimo_login    DateTime?
+  creado_en       DateTime  @default(now())
+
+  institucion    Institucion?   @relation(fields: [institucion_id], references: [id])
+  refresh_tokens RefreshToken[]
+  estudiante     Estudiante?
+
+  @@map("cuenta_usuario")
+}
+
+model RefreshToken {
+  id                String   @id @default(uuid()) @db.Uuid
+  cuenta_usuario_id String   @db.Uuid
+  token             String   @unique // hashed — NEVER plain text
+  expira_en         DateTime
+  revocado          Boolean  @default(false)
+  creado_en         DateTime @default(now())
+
+  cuenta_usuario CuentaUsuario @relation(fields: [cuenta_usuario_id], references: [id])
+
+  @@index([cuenta_usuario_id], name: "idx_refresh_token_usuario")
+  @@map("refresh_token")
+}
+
+// =============================================
+// INSTITUTIONAL LAYER (multi-tenant)
+// =============================================
+
+model Institucion {
+  id             String          @id @default(uuid()) @db.Uuid
+  nombre         String
+  slug           String          @unique // url identifier: duoc, inacap, usach
+  tipo           TipoInstitucion
+  logo_url       String?
+  creado_en      DateTime        @default(now())
+  actualizado_en DateTime?       @updatedAt
+
+  cuentas      CuentaUsuario[]
+  facultades   Facultad[]
+  asignaturas  Asignatura[]
+  periodos     PeriodoAcademico[]
+  reglas       ReglaInstitucion[]
+  estudiantes  Estudiante[]
+
+  @@map("institucion")
+}
+
+model Facultad {
+  id             String  @id @default(uuid()) @db.Uuid
+  institucion_id String  @db.Uuid
+  nombre         String
+  area           String? // ingenieria, salud, negocios, artes, ciencias
+
+  institucion Institucion @relation(fields: [institucion_id], references: [id])
+  carreras    Carrera[]
+
+  @@unique([institucion_id, nombre])
+  @@map("facultad")
+}
+
+// =============================================
+// ACADEMIC LAYER
+// =============================================
+
+// Career or study program — hangs from facultad (and transitively from institucion)
+model Carrera {
+  id              String    @id @default(uuid()) @db.Uuid
+  facultad_id     String    @db.Uuid
+  codigo          String
+  nombre          String
+  modalidad       Modalidad
+  total_semestres Int
+  total_creditos  Int?
+  esta_activa     Boolean   @default(true)
+
+  facultad             Facultad            @relation(fields: [facultad_id], references: [id])
+  mallas               MallaCurricular[]
+  estudiante_carreras  EstudianteCarrera[]
+
+  @@unique([facultad_id, codigo])
+  @@map("carrera")
+}
+
+// Versioned curriculum — a career can have multiple versions (2020, 2024, etc.)
+model MallaCurricular {
+  id          String   @id @default(uuid()) @db.Uuid
+  carrera_id  String   @db.Uuid
+  anio        Int
+  version     String?  // v1, v2
+  esta_activa Boolean  @default(true)
+  creado_en   DateTime @default(now())
+
+  carrera              Carrera             @relation(fields: [carrera_id], references: [id])
+  malla_asignaturas    MallaAsignatura[]
+  estudiante_carreras  EstudianteCarrera[]
+
+  @@unique([carrera_id, anio, version])
+  @@map("malla_curricular")
+}
+
+// Subject / course — exists independently, can be shared across careers
+model Asignatura {
+  id              String         @id @default(uuid()) @db.Uuid
+  institucion_id  String         @db.Uuid
+  codigo          String
+  nombre          String
+  creditos        Int
+  horas_teoricas  Int            @default(0)
+  horas_practicas Int            @default(0)
+  tipo_asignatura TipoAsignatura @default(obligatoria)
+
+  institucion       Institucion       @relation(fields: [institucion_id], references: [id])
+  malla_asignaturas MallaAsignatura[]
+  prerrequisitos    Prerrequisito[]   @relation("AsignaturaRequerida")
+  secciones         Seccion[]
+
+  @@unique([institucion_id, codigo])
+  @@map("asignatura")
+}
+
+// Pivot: which subjects belong to which curriculum and in which semester
+model MallaAsignatura {
+  id              String  @id @default(uuid()) @db.Uuid
+  malla_id        String  @db.Uuid
+  asignatura_id   String  @db.Uuid
+  numero_semestre Int
+  es_obligatoria  Boolean @default(true)
+
+  malla          MallaCurricular @relation(fields: [malla_id], references: [id])
+  asignatura     Asignatura      @relation(fields: [asignatura_id], references: [id])
+  prerrequisitos Prerrequisito[]
+
+  @@unique([malla_id, asignatura_id])
+  @@map("malla_asignatura")
+}
+
+// Prerequisites between subjects within a curriculum
+// group_key models: (A AND B) OR (C AND D)
+// same group_key = AND, different group_key = OR
+model Prerrequisito {
+  id                      String @id @default(uuid()) @db.Uuid
+  malla_asignatura_id     String @db.Uuid // the subject THAT HAS the prerequisite
+  asignatura_requerida_id String @db.Uuid // the subject THAT MUST BE APPROVED
+  grupo_clave             String // same group = AND, different group = OR
+
+  malla_asignatura     MallaAsignatura @relation(fields: [malla_asignatura_id], references: [id])
+  asignatura_requerida Asignatura      @relation("AsignaturaRequerida", fields: [asignatura_requerida_id], references: [id])
+
+  @@map("prerrequisito")
+}
+
+// =============================================
+// TEMPORAL LAYER
+// =============================================
+
+// Academic period (semester, quarter, summer)
+model PeriodoAcademico {
+  id                 String    @id @default(uuid()) @db.Uuid
+  institucion_id     String    @db.Uuid
+  nombre             String    // 2025-1, 2025-2, Verano 2025
+  anio               Int
+  semestre           Int       // 1, 2, 3 for summer
+  fecha_inicio       DateTime  @db.Date
+  fecha_fin          DateTime  @db.Date
+  inicio_inscripcion DateTime? @db.Date
+  fin_inscripcion    DateTime? @db.Date
+  esta_activo        Boolean   @default(false)
+
+  institucion   Institucion            @relation(fields: [institucion_id], references: [id])
+  secciones     Seccion[]
+  inscripciones Inscripcion[]
+  prioridades   PrioridadInscripcion[]
+
+  @@unique([institucion_id, anio, semestre])
+  @@map("periodo_academico")
+}
+
+// Section: concrete instance of a subject in a given period
+// "Cálculo I - Section 001 - Semester 2025-1"
+// inscritos_actual is computed dynamically via Prisma _count on inscripciones
+model Seccion {
+  id               String @id @default(uuid()) @db.Uuid
+  asignatura_id    String @db.Uuid
+  periodo_id       String @db.Uuid
+  codigo           String // NRC or section code: 001, 002
+  capacidad_maxima Int
+
+  asignatura      Asignatura       @relation(fields: [asignatura_id], references: [id])
+  periodo         PeriodoAcademico @relation(fields: [periodo_id], references: [id])
+  bloques_horario BloqueHorario[]
+  inscripciones   Inscripcion[]
+
+  @@unique([asignatura_id, periodo_id, codigo])
+  @@map("seccion")
+}
+
+// Schedule blocks for a section — a section can have multiple blocks
+// Used by the rules engine to validate CHOQUE_HORARIO
+model BloqueHorario {
+  id          String   @id @default(uuid()) @db.Uuid
+  seccion_id  String   @db.Uuid
+  dia_semana  Int      // 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+  hora_inicio DateTime @db.Time
+  hora_fin    DateTime @db.Time
+  sala        String?
+
+  seccion Seccion @relation(fields: [seccion_id], references: [id])
+
+  @@map("bloque_horario")
+}
+
+// =============================================
+// STUDENT LAYER
+// =============================================
+
+model Estudiante {
+  id                String  @id @default(uuid()) @db.Uuid
+  cuenta_usuario_id String  @unique @db.Uuid
+  institucion_id    String  @db.Uuid
+  codigo_estudiante String  // student ID / enrollment number
+  nombre            String
+  apellido          String
+  telefono          String?
+  anio_ingreso      Int?
+  esta_activo       Boolean @default(true)
+
+  cuenta_usuario      CuentaUsuario       @relation(fields: [cuenta_usuario_id], references: [id])
+  institucion         Institucion         @relation(fields: [institucion_id], references: [id])
+  estudiante_carreras EstudianteCarrera[]
+
+  @@unique([institucion_id, codigo_estudiante])
+  @@map("estudiante")
+}
+
+// Student-career relationship — a student can be enrolled in multiple careers
+model EstudianteCarrera {
+  id             String                  @id @default(uuid()) @db.Uuid
+  estudiante_id  String                  @db.Uuid
+  carrera_id     String                  @db.Uuid
+  malla_id       String                  @db.Uuid // curriculum version the student entered with
+  anio_admision  Int
+  estado         EstadoEstudianteCarrera @default(activo)
+
+  estudiante  Estudiante      @relation(fields: [estudiante_id], references: [id])
+  carrera     Carrera         @relation(fields: [carrera_id], references: [id])
+  malla       MallaCurricular @relation(fields: [malla_id], references: [id])
+
+  inscripciones Inscripcion[]
+  prioridades   PrioridadInscripcion[]
+
+  @@unique([estudiante_id, carrera_id])
+  @@map("estudiante_carrera")
+}
+
+// =============================================
+// ENROLLMENT LAYER (core business)
+// =============================================
+
+model Inscripcion {
+  id                    String            @id @default(uuid()) @db.Uuid
+  estudiante_carrera_id String            @db.Uuid
+  seccion_id            String            @db.Uuid
+  periodo_id            String            @db.Uuid
+  estado                EstadoInscripcion @default(inscrito)
+  inscrito_en           DateTime          @default(now())
+  actualizado_en        DateTime?         @updatedAt
+
+  estudiante_carrera EstudianteCarrera @relation(fields: [estudiante_carrera_id], references: [id])
+  seccion            Seccion           @relation(fields: [seccion_id], references: [id])
+  periodo            PeriodoAcademico  @relation(fields: [periodo_id], references: [id])
+
+  @@unique([estudiante_carrera_id, seccion_id])
+  @@map("inscripcion")
+}
+
+// Enrollment priority per period
+// Students with greater curriculum progress enroll first
+model PrioridadInscripcion {
+  id                    String    @id @default(uuid()) @db.Uuid
+  estudiante_carrera_id String    @db.Uuid
+  periodo_id            String    @db.Uuid
+  puntaje_prioridad     Int       // higher = enrolls earlier
+  ventana_inicio        DateTime? // when the student can start enrolling
+  ventana_fin           DateTime?
+
+  estudiante_carrera EstudianteCarrera @relation(fields: [estudiante_carrera_id], references: [id])
+  periodo            PeriodoAcademico  @relation(fields: [periodo_id], references: [id])
+
+  @@unique([estudiante_carrera_id, periodo_id])
+  @@map("prioridad_inscripcion")
+}
+
+// =============================================
+// RULES LAYER (configurable per institution)
+// =============================================
+
+// Business rules evaluated in priority order by the enrollment engine
+model ReglaInstitucion {
+  id              String    @id @default(uuid()) @db.Uuid
+  institucion_id  String    @db.Uuid
+  tipo_regla      TipoRegla
+  configuracion   Json      // e.g. {"max_creditos": 30, "nota_minima_aprobacion": 4.0}
+  prioridad       Int       @default(0) // evaluation order
+  esta_habilitada Boolean   @default(true)
+
+  institucion Institucion @relation(fields: [institucion_id], references: [id])
+
+  @@map("regla_institucion")
+}
