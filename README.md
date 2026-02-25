@@ -176,6 +176,10 @@ Azure se utiliza únicamente como entorno de despliegue básico por afinidad con
 de estudiantes basándose en requisitos de continuidad de ramos 
 (estudiantes que necesitan ramos específicos para continuar su malla).
 
+## Modelo de Datos
+
+![Modelo Entidad-Relación](docs/Untitled.png)
+
 ## Stack Tecnológico
 
 | Capa | Tecnología |
