@@ -1,10 +1,10 @@
-// Represents a priority score assigned to a student for enrollment ordering
-export class PrioridadEntity {
-  id: string;
-  estudiante_id: string;
-  puntaje: number;
-  motivo: string;
-  institucion_id: string;
-  createdAt: Date;
-  updatedAt: Date;
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class PrioridadInscripcionEntity {
+  @ApiProperty() id: string;
+  @ApiProperty() estudiante_carrera_id: string;
+  @ApiProperty() periodo_id: string;
+  @ApiProperty() puntaje_prioridad: number;
+  @ApiPropertyOptional({ nullable: true }) ventana_inicio: Date | null;
+  @ApiPropertyOptional({ nullable: true }) ventana_fin: Date | null;
 }

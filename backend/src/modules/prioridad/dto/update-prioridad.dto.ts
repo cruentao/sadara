@@ -1,15 +1,20 @@
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsInt, IsISO8601, IsOptional, Min } from 'class-validator';
 
 export class UpdatePrioridadDto {
+  @ApiPropertyOptional({ description: 'Nuevo puntaje de prioridad', minimum: 0 })
   @IsOptional()
   @IsInt()
-  @Min(1)
-  @Max(1000)
-  puntaje?: number;
+  @Min(0)
+  puntaje_prioridad?: number;
 
+  @ApiPropertyOptional({ description: 'Nuevo inicio de ventana de inscripción (ISO 8601)' })
   @IsOptional()
-  @IsString()
-  @MinLength(3)
-  @MaxLength(200)
-  motivo?: string;
+  @IsISO8601()
+  ventana_inicio?: string;
+
+  @ApiPropertyOptional({ description: 'Nuevo fin de ventana de inscripción (ISO 8601)' })
+  @IsOptional()
+  @IsISO8601()
+  ventana_fin?: string;
 }
