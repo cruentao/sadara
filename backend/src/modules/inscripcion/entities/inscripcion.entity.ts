@@ -1,10 +1,12 @@
-// Represents an enrollment (inscripción) returned by the API
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { EstadoInscripcion } from '@prisma/client';
+
 export class InscripcionEntity {
-  id: string;
-  estudiante_id: string;
-  asignatura_id: string;
-  institucion_id: string;
-  estado: string;
-  createdAt: Date;
-  updatedAt: Date;
+  @ApiProperty() id: string;
+  @ApiProperty() estudiante_carrera_id: string;
+  @ApiProperty() seccion_id: string;
+  @ApiProperty() periodo_id: string;
+  @ApiProperty({ enum: EstadoInscripcion }) estado: EstadoInscripcion;
+  @ApiProperty() inscrito_en: Date;
+  @ApiPropertyOptional({ nullable: true }) actualizado_en: Date | null;
 }

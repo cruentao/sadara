@@ -1,8 +1,9 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { EstadoInscripcion } from '@prisma/client';
+import { IsEnum } from 'class-validator';
 
 export class UpdateInscripcionDto {
-  @IsOptional()
-  @IsString()
-  @IsIn(['pendiente', 'confirmada', 'cancelada'])
-  estado?: string;
+  @ApiProperty({ enum: EstadoInscripcion })
+  @IsEnum(EstadoInscripcion)
+  estado: EstadoInscripcion;
 }
