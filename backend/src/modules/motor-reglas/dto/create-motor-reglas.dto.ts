@@ -1,16 +1,22 @@
-import { IsIn, IsInt, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TipoRegla } from '@prisma/client';
+import { IsEnum, IsInt, IsObject, IsOptional, Min } from 'class-validator';
 
 export class CreateMotorReglasDto {
-  @IsString()
-  @MinLength(3)
-  @MaxLength(200)
-  nombre: string;
+  @ApiProperty({ enum: TipoRegla })
+  @IsEnum(TipoRegla)
+  tipo_regla: TipoRegla;
 
-  @IsString()
-  @IsIn(['prerequisito', 'limite_creditos', 'incompatibilidad'])
-  tipo: string;
+  @ApiProperty({
+    description: 'Configuración JSON de la regla',
+    example: { max_creditos: 30 },
+  })
+  @IsObject()
+  configuracion: Record<string, unknown>;
 
+  @ApiPropertyOptional({ description: 'Orden de evaluación (menor = primero)', default: 0 })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  valor: number;
+  prioridad?: number;
 }
