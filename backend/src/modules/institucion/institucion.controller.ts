@@ -8,14 +8,16 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateInstitucionDto } from './dto/create-institucion.dto';
 import { UpdateInstitucionDto } from './dto/update-institucion.dto';
 import { InstitucionService } from './institucion.service';
 
-// All routes require super_admin role — instituciones are platform-level resources
+@ApiTags('instituciones')
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('super_admin')
 @Controller('instituciones')

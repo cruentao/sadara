@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -31,9 +32,33 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
+  // Swagger — API documentation at /api/docs
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('SADARA API')
+    .setDescription(
+      'Sistema de Administración de Registro de Asignaturas — API REST multi-tenant para instituciones de educación superior.',
+    )
+    .setVersion('1.0')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Access token JWT (expira en 15m)' },
+      'access-token',
+    )
+    .addCookieAuth('refresh_token', {
+      type: 'apiKey',
+      in: 'cookie',
+      description: 'Refresh token httpOnly (expira en 7d)',
+    })
+    .build();
+
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: { persistAuthorization: true },
+  });
+
   const port = configService.get<number>('port') ?? 3000;
   await app.listen(port);
   console.log(`SADARA API running on http://localhost:${port}`);
+  console.log(`Swagger docs at http://localhost:${port}/api/docs`);
 }
 
 bootstrap();

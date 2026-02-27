@@ -8,6 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -16,6 +17,8 @@ import { CreateMotorReglasDto } from './dto/create-motor-reglas.dto';
 import { UpdateMotorReglasDto } from './dto/update-motor-reglas.dto';
 import { MotorReglasService } from './motor-reglas.service';
 
+@ApiTags('motor-reglas')
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin_institucion')
 @Controller('motor-reglas')
