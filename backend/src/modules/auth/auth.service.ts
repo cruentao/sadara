@@ -85,7 +85,10 @@ export class AuthService {
     };
   }
 
-  async refresh(plainRefreshToken: string, ip: string): Promise<{ accessToken: string }> {
+  async refresh(
+    plainRefreshToken: string,
+    ip: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     if (!plainRefreshToken) {
       this.logger.warn(
         `[SECURITY] missing_refresh_token | ip: ${ip} | timestamp: ${new Date().toISOString()}`,
@@ -113,6 +116,12 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token inválido o expirado');
     }
 
+    // Revoke the used token — each refresh token is single-use (rotation)
+    await this.prisma.refreshToken.update({
+      where: { token: hash },
+      data: { revocado: true },
+    });
+
     const user = stored.cuenta_usuario;
     const payload: JwtPayload = {
       sub: user.id,
@@ -120,7 +129,25 @@ export class AuthService {
       institucion_id: user.institucion_id ?? '',
     };
 
-    return { accessToken: this.jwtService.sign(payload) };
+    // Issue a new refresh token and persist its hash
+    const newPlainRefreshToken = this.generateSecureToken();
+    const newTokenHash = this.hashToken(newPlainRefreshToken);
+    const expiration = this.parseExpiration(
+      this.configService.get<string>('jwt.refreshExpiration') ?? '7d',
+    );
+
+    await this.prisma.refreshToken.create({
+      data: {
+        cuenta_usuario_id: user.id,
+        token: newTokenHash,
+        expira_en: expiration,
+      },
+    });
+
+    return {
+      accessToken: this.jwtService.sign(payload),
+      refreshToken: newPlainRefreshToken,
+    };
   }
 
   async logout(userId: string, plainRefreshToken: string | undefined): Promise<void> {

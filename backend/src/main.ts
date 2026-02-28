@@ -3,12 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+
+  // Security headers — sets X-Content-Type-Options, X-Frame-Options, HSTS, etc.
+  app.use(helmet());
 
   // Parse cookies for httpOnly refresh token handling
   app.use(cookieParser());

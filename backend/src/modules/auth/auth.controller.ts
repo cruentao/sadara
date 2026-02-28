@@ -8,6 +8,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiCookieAuth,
@@ -33,8 +34,12 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  // Rate limit: max 5 login attempts per IP per minute to prevent brute force
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Autenticar usuario', description: 'Valida credenciales y retorna un access token JWT. El refresh token se establece como cookie httpOnly.' })
   @ApiResponse({ status: 200, description: 'Login exitoso', type: AuthEntity })
+  @ApiResponse({ status: 429, description: 'Demasiados intentos — espera 1 minuto' })
   @ApiResponse({ status: 401, description: 'Credenciales incorrectas' })
   async login(
     @Body() loginDto: LoginDto,
@@ -58,14 +63,26 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiCookieAuth('refresh_token')
-  @ApiOperation({ summary: 'Renovar access token', description: 'Usa el refresh token de la cookie httpOnly para emitir un nuevo access token.' })
+  @ApiOperation({ summary: 'Renovar access token', description: 'Usa el refresh token de la cookie httpOnly para emitir un nuevo access token. El refresh token anterior queda revocado (rotación).' })
   @ApiResponse({ status: 200, description: 'Nuevo access token', schema: { properties: { accessToken: { type: 'string' } } } })
   @ApiResponse({ status: 401, description: 'Refresh token inválido o expirado' })
   async refresh(
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{ accessToken: string }> {
-    const refreshToken = (req.cookies as Record<string, string>)[REFRESH_COOKIE] ?? '';
-    return this.authService.refresh(refreshToken, req.ip ?? '');
+    const oldToken = (req.cookies as Record<string, string>)[REFRESH_COOKIE] ?? '';
+    const result = await this.authService.refresh(oldToken, req.ip ?? '');
+
+    // Rotate the cookie: replace old refresh token with the new one
+    res.cookie(REFRESH_COOKIE, result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: REFRESH_COOKIE_MAX_AGE,
+      path: '/auth',
+    });
+
+    return { accessToken: result.accessToken };
   }
 
   @Post('logout')

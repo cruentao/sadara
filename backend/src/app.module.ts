@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -18,6 +19,8 @@ import { GeneradorPdfModule } from './modules/generador-pdf/generador-pdf.module
       isGlobal: true,
       load: [configuration],
     }),
+    // Rate limiting — applied selectively per endpoint via ThrottlerGuard decorator
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 5 }]),
     // Global Prisma — available everywhere without importing PrismaModule again
     PrismaModule,
     // Feature modules
