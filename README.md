@@ -271,6 +271,60 @@ Al iniciar el contenedor, `prisma migrate deploy` se ejecuta automáticamente an
 
 ---
 
+## CI/CD — GitHub Actions
+
+El pipeline de integración y despliegue continuo está definido en `.github/workflows/ci-cd.yml`.
+
+### Trigger
+
+Se activa automáticamente en cada `push` a la rama `main` que incluya cambios dentro de `backend/`.
+
+```
+push → main (backend/**) → CI/CD pipeline
+```
+
+### Etapas del pipeline
+
+```
+checkout → buildx setup → login GHCR → build & push imagen → deploy Azure
+```
+
+| Etapa | Herramienta | Qué hace |
+|-------|-------------|----------|
+| Checkout | `actions/checkout@v4` | Descarga el código del repositorio |
+| Docker Buildx | `docker/setup-buildx-action@v3` | Habilita builder avanzado con soporte de caché |
+| Login GHCR | `docker/login-action@v3` | Se autentica en `ghcr.io` con el PAT del secret |
+| Build & Push | `docker/build-push-action@v5` | Construye la imagen desde `backend/Dockerfile` y la publica en GHCR con caché entre runs |
+| Deploy | `azure/webapps-deploy@v3` | Indica a Azure App Service qué imagen usar y reinicia el contenedor |
+
+### Secrets requeridos en GitHub
+
+Configurar en **Settings → Secrets and variables → Actions**:
+
+| Secret | Descripción |
+|--------|-------------|
+| `GHCR_TOKEN` | Personal Access Token con scope `write:packages` |
+| `AZURE_WEBAPP_NAME` | Nombre del App Service (`sadara-backend`) |
+| `AZURE_PUBLISH_PROFILE` | XML descargado desde Azure Portal → App Service → Overview → *Get publish profile* |
+
+### Caché de capas Docker
+
+El pipeline usa caché de GitHub Actions (`type=gha`) para reutilizar capas entre ejecuciones. El primer build tarda ~2-3 min; los builds subsiguientes que no cambien dependencias pueden reducirse a menos de 1 min.
+
+### Flujo completo de un deploy
+
+```
+1. git push → main
+2. GitHub Actions detecta cambios en backend/
+3. Build de imagen Docker (con caché)
+4. Push a ghcr.io/cruentao/sadara-backend:latest
+5. Azure App Service descarga la nueva imagen
+6. Contenedor reinicia → prisma migrate deploy → node dist/main
+7. API disponible en https://sadara-backend.azurewebsites.net
+```
+
+---
+
 ## Variables de entorno
 
 | Variable | Descripción | Ejemplo |
