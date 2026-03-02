@@ -206,4 +206,85 @@ de estudiantes basándose en requisitos de continuidad de ramos
 
 ---
 
+---
+
+## Instalación — Desarrollo Local
+
+### Requisitos previos
+
+| Herramienta | Versión mínima |
+|---|---|
+| Node.js | 20 LTS |
+| Docker Desktop | cualquiera reciente |
+| Git | cualquiera |
+
+### Pasos
+
+**1. Clonar el repositorio**
+```bash
+git clone https://github.com/cruentao/sadara.git
+cd sadara
+```
+
+**2. Configurar variables de entorno**
+```bash
+cd backend
+cp .env.example .env
+# Los valores por defecto funcionan para desarrollo local con Docker
+```
+
+**3. Levantar la base de datos**
+```bash
+# Desde la raíz del proyecto
+docker-compose up -d
+
+# Verificar que esté corriendo
+docker ps   # debe aparecer sadara_db  Up
+```
+
+**4. Instalar dependencias**
+```bash
+cd backend
+npm install --legacy-peer-deps
+```
+
+**5. Ejecutar migraciones**
+```bash
+npx prisma migrate deploy
+```
+
+**6. Iniciar el backend**
+```bash
+npm run start:dev
+```
+
+- API: `http://localhost:3000`
+- Swagger: `http://localhost:3000/api/docs`
+
+---
+
+## Deploy en Azure
+
+El backend está contenerizado con Docker y desplegado en Azure App Service. La base de datos corre en Azure Database for PostgreSQL Flexible Server. Las variables de entorno se configuran directamente en el App Service.
+
+Al iniciar el contenedor, `prisma migrate deploy` se ejecuta automáticamente antes de levantar el servidor.
+
+---
+
+## Variables de entorno
+
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `NODE_ENV` | Entorno de ejecución | `development` / `production` |
+| `PORT` | Puerto del servidor | `3000` |
+| `DATABASE_URL` | Cadena de conexión PostgreSQL | `postgresql://user:pass@host:5432/db` |
+| `JWT_ACCESS_SECRET` | Secreto para firmar access tokens | mínimo 32 chars aleatorios |
+| `JWT_ACCESS_EXPIRATION` | Duración del access token | `15m` |
+| `JWT_REFRESH_SECRET` | Secreto para firmar refresh tokens | mínimo 32 chars aleatorios |
+| `JWT_REFRESH_EXPIRATION` | Duración del refresh token | `7d` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos (separados por coma) | `http://localhost:4200` |
+| `BCRYPT_SALT_ROUNDS` | Rondas de hash para contraseñas | `10` |
+
+---
+
 **Proyecto de Portafolio** | Desarrollo activo

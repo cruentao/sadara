@@ -1,17 +1,27 @@
-import { IsInt, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsInt, IsISO8601, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class CreatePrioridadDto {
-  @IsString()
-  @IsUUID(4)
-  estudiante_id: string;
+  @ApiProperty({ description: 'ID de la matrícula de carrera del estudiante', format: 'uuid' })
+  @IsUUID('4')
+  estudiante_carrera_id: string;
 
+  @ApiProperty({ description: 'ID del período académico', format: 'uuid' })
+  @IsUUID('4')
+  periodo_id: string;
+
+  @ApiProperty({ description: 'Puntaje de prioridad (mayor = inscribe antes)', minimum: 0 })
   @IsInt()
-  @Min(1)
-  @Max(1000)
-  puntaje: number;
+  @Min(0)
+  puntaje_prioridad: number;
 
-  @IsString()
-  @MinLength(3)
-  @MaxLength(200)
-  motivo: string;
+  @ApiPropertyOptional({ description: 'Inicio de la ventana de inscripción del estudiante (ISO 8601)' })
+  @IsOptional()
+  @IsISO8601()
+  ventana_inicio?: string;
+
+  @ApiPropertyOptional({ description: 'Fin de la ventana de inscripción del estudiante (ISO 8601)' })
+  @IsOptional()
+  @IsISO8601()
+  ventana_fin?: string;
 }
